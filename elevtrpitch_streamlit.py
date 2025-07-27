@@ -1,66 +1,112 @@
 
 import streamlit as st
-from flair.models import TextClassifier
-from flair.data import Sentence
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-# Load Flair sentiment model
-classifier = TextClassifier.load('en-sentiment')
+# Initialize VADER sentiment analyzer
+analyzer = SentimentIntensityAnalyzer()
 
-# App configuration
-st.set_page_config(page_title="ElevtrPitch", layout="centered")
-st.markdown(
-    "<h1 style='text-align: center; color: #D4AF37;'>🚀 ElevtrPitch</h1>",
-    unsafe_allow_html=True,
-)
-st.markdown("<h4 style='text-align: center; color: #800020;'>AI-Powered Pitch Analyzer</h4>", unsafe_allow_html=True)
-st.markdown("---")
+st.title("elevtrpitch.ai")
+st.caption("Created by Ayaan Patel")
 
-# Input section
-pitch = st.text_area("🎤 Enter your elevator pitch:", height=200, placeholder="Write a startup pitch here...")
+# Company name input
+company_name = st.text_input("Company Name:", "")
 
-st.markdown("### 🎚️ Customize Your Metrics")
-clarity = st.slider("Clarity", 0, 10, 5)
-feasibility = st.slider("Feasibility", 0, 10, 5)
-innovation = st.slider("Innovation", 0, 10, 5)
+st.markdown("""
+Below, you'll see sliders with metrics such as market size, product uniqueness, and more.
+Drag the sliders to display each metric on a scale from 0 to 10, with 0 being the lowest and 10 being the highest.
+For the investment amount slider, drag it to select the amount of investment you want to ask for.
+""")
 
-if st.button("🔍 Analyze Pitch"):
-    if pitch.strip() == "":
-        st.warning("Please enter a pitch to analyze.")
+# Sliders for metrics
+market_size = st.slider("Market Size:", 0.0, 10.0, 5.0, 0.1)
+product_uniqueness = st.slider("Product Uniqueness:", 0.0, 10.0, 5.0, 0.1)
+team_experience = st.slider("Team Experience:", 0.0, 10.0, 5.0, 0.1)
+revenue_model = st.slider("Revenue Model Success Potential:", 0.0, 10.0, 5.0, 0.1)
+sales_till_date = st.slider("Sales Till Date:", 0.0, 10.0, 5.0, 0.1)
+investment_asked = st.slider("Amount of Investment Asked:", 0, 1000000, 500000, 10000)
+
+# Pitch input
+pitch = st.text_area("Your Pitch:", height=150, placeholder="Type your startup pitch here...")
+
+st.markdown("### Sentiment Analysis (VADER)")
+if pitch.strip():
+    vs = analyzer.polarity_scores(pitch)
+    compound = vs['compound']
+    if compound >= 0.05:
+        sentiment_label = "POSITIVE"
+    elif compound <= -0.05:
+        sentiment_label = "NEGATIVE"
     else:
-        sentence = Sentence(pitch)
-        classifier.predict(sentence)
-        sentiment = sentence.labels[0]
-        sentiment_value = sentiment.score
-        sentiment_label = sentiment.value
+        sentiment_label = "NEUTRAL"
+    st.write(f"Sentiment: **{sentiment_label}** (compound score: {compound:.3f})")
+else:
+    st.write("Enter a pitch above to see sentiment analysis.")
 
-        # Normalize metrics to 0–1 scale
-        clarity_norm = clarity / 10
-        feasibility_norm = feasibility / 10
-        innovation_norm = innovation / 10
+# Polarity score function (mapped from VADER compound)
+def polarity_score():
+    if not pitch.strip():
+        return 0
+    comp = analyzer.polarity_scores(pitch)['compound']
+    if comp >= 0.6:
+        return 10
+    elif comp >= 0.3:
+        return 5
+    else:
+        return 0
 
-        # Weighted average investment score (sentiment + logic)
-        investment_score = round((sentiment_value + (clarity_norm + feasibility_norm + innovation_norm) / 3) / 2 * 100, 2)
+# Contextual investment scoring based on prior metrics
+def invest_score_contextual():
+    ask = investment_asked
+    core_avg = (market_size + product_uniqueness + team_experience + revenue_model + sales_till_date) / 5
+    if ask > 750000 and core_avg < 6:
+        return 2
+    elif ask > 600000 and core_avg < 5:
+        return 1
+    elif 300000 <= ask <= 600000:
+        return 10
+    elif ask < 200000 and core_avg > 7:
+        return 4
+    else:
+        return 6
 
-        st.markdown("---")
-        st.markdown("## 🧠 Analysis Results")
-        st.metric("Sentiment", f"{sentiment_label} ({round(sentiment_value * 100, 1)}%)")
-        st.metric("Investment Score", f"{investment_score} / 100")
+if st.button("Show Scores"):
+    core_avg = (market_size + product_uniqueness + team_experience + revenue_model + sales_till_date) / 5
+    pol_score = polarity_score()
+    invest_score = invest_score_contextual()
 
-        # Generate feedback
-        feedback = []
-        if clarity < 5:
-            feedback.append("🔹 Improve how clearly your pitch communicates the idea.")
-        if feasibility < 5:
-            feedback.append("🔹 Provide more realistic execution details.")
-        if innovation < 5:
-            feedback.append("🔹 Emphasize what makes your solution unique or new.")
+    st.write("### Your Scores:")
+    st.write(f"- Company Name: {company_name}")
+    st.write(f"- Market Size: {market_size}")
+    st.write(f"- Product Uniqueness: {product_uniqueness}")
+    st.write(f"- Team Experience: {team_experience}")
+    st.write(f"- Revenue Model: {revenue_model}")
+    st.write(f"- Sales Till Date: {sales_till_date}")
+    st.write(f"- Amount of Investment Asked: {investment_asked}")
+    st.write(f"- Core Metrics Average: {core_avg:.2f}")
+    st.write(f"- Polarity Score (from VADER): {pol_score}")
+    st.write(f"- Contextual Investment Score: {invest_score}")
 
-        if sentiment_value < 0.5:
-            feedback.append("🔹 Strengthen your tone and confidence in the pitch.")
+    total_score = (
+        1.5 * market_size +
+        1.2 * product_uniqueness +
+        1.3 * team_experience +
+        revenue_model +
+        1.4 * sales_till_date +
+        invest_score +
+        2 * pol_score
+    )
 
-        st.markdown("### 📌 Feedback")
-        if feedback:
-            for tip in feedback:
-                st.markdown(tip)
-        else:
-            st.success("✅ Your pitch looks strong across all metrics!")
+    st.write(f"### Final Weighted Score: {total_score:.2f}")
+
+    if total_score <= 20:
+        st.error("Extremely weak. I'm out!")
+    elif total_score <= 30:
+        st.warning("Pretty weak. Needs improvement in most areas. I'm out!")
+    elif total_score <= 40:
+        st.info("Some strengths, but lacks polish. I'm out!")
+    elif total_score <= 60:
+        st.info("Decent. Some promise, but room to improve. I'm on the fence.")
+    elif total_score <= 70:
+        st.success("Strong potential. I'm in!")
+    else:
+        st.success("Well done! This is a compelling pitch. I'm in!")
